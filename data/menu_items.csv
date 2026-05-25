@@ -1,0 +1,81 @@
+item_id,category,name,price,is_spicy
+1,Starters,Vegetable Spring Rolls (3pc),6.00,False
+2,Starters,Vegetable Spring Rolls (6pc),9.00,False
+3,Starters,Satay with Peanut Sauce (1pc),3.00,False
+4,Starters,Satay with Peanut Sauce (3pc),10.00,False
+5,Starters,Deep Fried Tofu,12.00,False
+6,Starters,Gado Gado,14.00,False
+7,Starters,Roti Canai,13.00,False
+8,Starters,Breaded Cauliflower Bites,12.00,False
+9,Starters,Crispy Chicken Strips,13.00,False
+10,Starters,Bean Curd Drumsticks,13.00,False
+11,Starters,Fried Enoki Mushroom,16.00,False
+12,Soups,Wonton Soup,17.00,False
+13,Soups,Tom Yum Soup,17.00,True
+14,Soups,Spicy Curry Noodle Soup,18.00,True
+15,Veggie & Tofu,Padmanadi Vegetable Deluxe,19.00,False
+16,Veggie & Tofu,Chili Green Beans,19.00,False
+17,Veggie & Tofu,Spicy String Beans,19.00,True
+18,Veggie & Tofu,King Oyster Mushroom Gaylan,20.00,False
+19,Veggie & Tofu,Savory Eggplant,18.00,False
+20,Veggie & Tofu,Spicy Coconut Eggplant,18.00,True
+21,Veggie & Tofu,Mapo Tofu,19.00,True
+22,Veggie & Tofu,Pan-Fried Broccoli & Cauliflower,18.00,False
+23,Veggie & Tofu,Curry Vegetables & Tofu,20.00,True
+24,Veggie & Tofu,Tempeh Pulau,20.00,True
+25,Veggie & Tofu,Mushroom Tofu,19.00,False
+26,Veggie & Tofu,Chili Tofu,19.00,True
+27,Plant-Based Meat,Kung Pao Chicken,20.00,False
+28,Plant-Based Meat,Ginger Beef,21.00,False
+29,Plant-Based Meat,Dendeng,20.00,False
+30,Plant-Based Meat,Sweet & Sour Chicken,19.00,False
+31,Plant-Based Meat,Spicy Chicken,19.00,True
+32,Plant-Based Meat,General Tao Chicken,21.00,False
+33,Plant-Based Meat,Curry Chicken,22.00,True
+34,Plant-Based Meat,Curry Mutton,22.00,True
+35,Plant-Based Meat,Sweet & Sour Shrimp,20.00,False
+36,Plant-Based Meat,Spicy Shrimp,20.00,True
+37,Plant-Based Meat,Teriyaki Chicken,19.00,False
+38,Plant-Based Meat,Rendang,20.00,True
+39,Rice & Noodles,Nasi Goreng,18.00,False
+40,Rice & Noodles,Bakmi Goreng,19.00,False
+41,Rice & Noodles,Bihun Goreng,18.00,False
+42,Rice & Noodles,Kwetiau Goreng,19.00,False
+43,Rice & Noodles,Singapore Noodle,19.00,True
+44,Rice & Noodles,Lemongrass Vermicelli Bowl,20.00,False
+45,Rice & Noodles,Bali Buddha Bowl,18.00,False
+46,Sides,Jasmine Rice,2.75,False
+47,Sides,Coconut Rice,3.00,False
+48,Sides,Brown Rice,3.00,False
+49,Lunch Special,Lunch Special,18.00,False
+50,Coffee,Americano,4.50,False
+51,Coffee,Soy Latte,5.50,False
+52,Coffee,Soy Mocha,6.00,False
+53,Coffee,Vegan Iced Coffee,5.50,False
+54,Coffee,Iced Brown Sugar Oat Latte,6.50,False
+55,Coffee,Decaf Coffee,4.50,False
+56,Tea,Organic Tea,3.50,False
+57,Tea,Soy Chai Latte,5.50,False
+58,Tea,London Fog,5.50,False
+59,Tea,Hot Chocolate,5.00,False
+60,Tea,Matcha Latte,6.50,False
+61,Tea,Iced Oat Strawberry Matcha,8.50,False
+62,Drinks,Iced Lychee,7.50,False
+63,Drinks,Iced Pineapple,7.50,False
+64,Drinks,Sparkling Yuzu,8.50,False
+65,Drinks,Iced Passion Fruit Green Tea,7.00,False
+66,Drinks,Assorted Soft Drinks,2.50,False
+67,Drinks,Raspberry Lime Italian Soda,6.50,False
+68,Drinks,Iced Blackberry Hibiscus Tea,7.00,False
+69,Desserts,Cheesecake,11.00,False
+70,Desserts,Panna Cotta,9.00,False
+71,Desserts,Fried Banana with Coconut Ice Cream,13.00,False
+72,Desserts,Vegan Ice Cream,7.00,False
+73,Desserts,Chocolate Mousse,9.00,False
+74,Extras,Extra Protein,5.00,False
+75,Extras,Extra Tofu,4.00,False
+76,Extras,Extra Veggies,4.00,False
+77,Extras,Sub Coconut Rice (+1),1.00,False
+78,Extras,Sub Brown Rice (+1),1.00,False
+79,Extras,Add Noodles (Soup),3.00,False
+80,Soups,Vegetable Combo Soup,17.00,False
