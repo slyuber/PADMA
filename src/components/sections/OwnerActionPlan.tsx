@@ -1,37 +1,30 @@
 import { useMemo } from "react";
 import { completedOrders, allOrderItems, recipes, getHour } from "@/lib/data";
-import { fmtDollars, fmt } from "@/lib/utils";
+import { fmtDollars, fmt, fmtPct } from "@/lib/utils";
 import { SectionHeader } from "../SectionHeader";
-import {
-  ChefHat, ShoppingCart, TrendingUp, Clock, Megaphone, AlertCircle,
-} from "lucide-react";
-
-interface ActionItem {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-  color: string;
-}
+import { TrendingUp, TrendingDown, AlertTriangle, ArrowUpRight } from "lucide-react";
 
 export function OwnerActionPlan() {
-  const actions = useMemo(() => {
+  const data = useMemo(() => {
     const orders = completedOrders;
     const items = allOrderItems.filter((i) => {
       const oid = orders.find((o) => o.order_id === i.order_id);
       return !!oid;
     });
 
-    // Top-selling items
-    const itemQty: Record<string, number> = {};
-    const itemRev: Record<string, number> = {};
+    // Item volume
+    const itemQty: Record<string, { qty: number; rev: number; cat: string }> = {};
     for (const i of items) {
-      itemQty[i.item_name] = (itemQty[i.item_name] || 0) + i.quantity;
-      itemRev[i.item_name] = (itemRev[i.item_name] || 0) + i.line_total;
+      if (!itemQty[i.item_name]) itemQty[i.item_name] = { qty: 0, rev: 0, cat: i.category };
+      itemQty[i.item_name].qty += i.quantity;
+      itemQty[i.item_name].rev += i.line_total;
     }
-    const topByQty = Object.entries(itemQty).sort((a, b) => b[1] - a[1]);
-    const topItem = topByQty[0]?.[0] ?? "";
+    const topByQty = Object.entries(itemQty)
+      .filter(([, v]) => !["Sides", "Extras"].includes(v.cat))
+      .sort((a, b) => b[1].qty - a[1].qty);
+    const bottomByQty = [...topByQty].reverse();
 
-    // Ingredient burn for sauces
+    // Sauce burn
     const sauceBurn: Record<string, number> = {};
     for (const i of items) {
       const rec = recipes.filter((r) => r.menu_item_id === i.menu_item_id);
@@ -41,9 +34,9 @@ export function OwnerActionPlan() {
         }
       }
     }
-    const topSauces = Object.entries(sauceBurn).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const topSauce = Object.entries(sauceBurn).sort((a, b) => b[1] - a[1])[0];
 
-    // Busiest and slowest hours
+    // Busiest/slowest hours
     const hourCounts: Record<number, number> = {};
     for (const o of orders) {
       const h = getHour(o);
@@ -53,112 +46,152 @@ export function OwnerActionPlan() {
     const busiestHour = Number(hoursSorted[0]?.[0] ?? 18);
     const slowestHour = Number(hoursSorted[hoursSorted.length - 1]?.[0] ?? 15);
 
-    // Beverage attachment
+    // Beverage / dessert attachment
     const foodOrders = new Set(
-      items.filter((i) => !["Coffee", "Tea", "Drinks", "Desserts", "Extras", "Sides"].includes(i.category))
-        .map((i) => i.order_id)
+      items.filter((i) => !["Coffee", "Tea", "Drinks", "Desserts", "Extras", "Sides"].includes(i.category)).map((i) => i.order_id)
     );
-    const bevOrders = new Set(
-      items.filter((i) => ["Coffee", "Tea", "Drinks"].includes(i.category))
-        .map((i) => i.order_id)
-    );
-    const bevRate = foodOrders.size
-      ? [...bevOrders].filter((id) => foodOrders.has(id)).length / foodOrders.size
-      : 0;
-    const dessertOrders = new Set(
-      items.filter((i) => i.category === "Desserts").map((i) => i.order_id)
-    );
-    const dessRate = foodOrders.size
-      ? [...dessertOrders].filter((id) => foodOrders.has(id)).length / foodOrders.size
-      : 0;
+    const bevOrders = new Set(items.filter((i) => ["Coffee", "Tea", "Drinks"].includes(i.category)).map((i) => i.order_id));
+    const dessOrders = new Set(items.filter((i) => i.category === "Desserts").map((i) => i.order_id));
+    const bevRate = foodOrders.size ? [...bevOrders].filter((id) => foodOrders.has(id)).length / foodOrders.size : 0;
+    const dessRate = foodOrders.size ? [...dessOrders].filter((id) => foodOrders.has(id)).length / foodOrders.size : 0;
 
-    // High-complexity items with volume
-    const pressureItems: { name: string; qty: number; complexity: number }[] = [];
-    const seen = new Set<number>();
-    for (const i of items) {
-      if (seen.has(i.menu_item_id) || ["Extras", "Sides"].includes(i.category)) continue;
-      seen.add(i.menu_item_id);
-      const rec = recipes.filter((r) => r.menu_item_id === i.menu_item_id);
-      const cx = rec.reduce((s, r) => s + r.complexity_weight, 0);
-      const q = itemQty[i.item_name] || 0;
-      if (cx >= 10 && q >= 50) {
-        pressureItems.push({ name: i.item_name, qty: q, complexity: cx });
-      }
-    }
-    pressureItems.sort((a, b) => b.qty * b.complexity - a.qty * a.complexity);
+    // Short shelf life
+    const shortShelf = [...new Set(
+      recipes.filter((r) => r.shelf_life_days <= 5 && r.ingredient_category !== "Beverages").map((r) => r.ingredient)
+    )];
 
-    // Short shelf-life ingredients with high burn
-    const shortShelf = recipes
-      .filter((r) => r.shelf_life_days <= 5 && r.ingredient_category !== "Beverages")
-      .map((r) => r.ingredient);
-    const uniqueShortShelf = [...new Set(shortShelf)];
+    // Weekend vs weekday
+    const byDate: Record<string, number> = {};
+    for (const o of orders) byDate[o.order_date] = (byDate[o.order_date] || 0) + o.total;
+    const dailyData = Object.entries(byDate).map(([d, rev]) => ({
+      dow: new Date(d + "T12:00:00").toLocaleDateString("en-CA", { weekday: "short" }),
+      rev,
+    }));
+    const wkdayRevs = dailyData.filter((d) => !["Sat", "Sun"].includes(d.dow));
+    const wkendRevs = dailyData.filter((d) => ["Sat", "Sun"].includes(d.dow));
+    const weekdayAvg = wkdayRevs.length ? wkdayRevs.reduce((s, d) => s + d.rev, 0) / wkdayRevs.length : 0;
+    const weekendAvg = wkendRevs.length ? wkendRevs.reduce((s, d) => s + d.rev, 0) / wkendRevs.length : 0;
+    const weekendLift = weekdayAvg > 0 ? (weekendAvg / weekdayAvg - 1) : 0;
 
-    const result: ActionItem[] = [];
+    // Top 5 items by revenue
+    const topRevItems = Object.entries(itemQty)
+      .filter(([, v]) => !["Sides", "Extras", "Lunch Special"].includes(v.cat))
+      .sort((a, b) => b[1].rev - a[1].rev)
+      .slice(0, 5);
 
-    result.push({
-      icon: <ChefHat size={18} />,
-      title: "Prep More",
-      body: topSauces.length
-        ? `${topSauces.map((s) => s[0]).join(", ")} are the highest-burn sauces. ${topSauces[0][0]} appears across high-volume starters and mains — treat it as a batch-critical item and forecast separately from general sauces. Consider doubling batch size for weekend prep.`
-        : `Focus prep on sauces tied to the top 5 menu items.`,
-      color: "text-padma-green",
-    });
+    // Lowest-selling items with decent margin (>$15)
+    const lowVolHighPrice = Object.entries(itemQty)
+      .filter(([, v]) => !["Sides", "Extras", "Coffee", "Tea", "Drinks"].includes(v.cat))
+      .sort((a, b) => a[1].qty - b[1].qty)
+      .filter(([, v]) => v.rev / v.qty > 15)
+      .slice(0, 3);
 
-    result.push({
-      icon: <ShoppingCart size={18} />,
-      title: "Watch Inventory",
-      body: uniqueShortShelf.length
-        ? `Short shelf-life items to watch: ${uniqueShortShelf.slice(0, 5).join(", ")}. These have 3-5 day shelf lives — order in smaller, more frequent batches to reduce waste. Cross-check par levels against actual week-over-week usage.`
-        : `All ingredients have adequate shelf life. Focus on reorder thresholds for high-volume proteins and sauces.`,
-      color: "text-jade",
-    });
-
-    result.push({
-      icon: <TrendingUp size={18} />,
-      title: "Menu Opportunity",
-      body: `Dessert attachment is ${(dessRate * 100).toFixed(0)}% and beverages ${(bevRate * 100).toFixed(0)}%. A server prompt ("save room for our Fried Banana with Coconut Ice Cream?") could lift dessert attach by 5-10 points. Consider a combo: any main + drink for a small discount to push beverage attach past 70%.`,
-      color: "text-gold",
-    });
-
-    result.push({
-      icon: <Clock size={18} />,
-      title: "Staffing & Service Timing",
-      body: `Peak dinner pressure hits ${busiestHour}:00. The ${slowestHour}:00 window is consistently the slowest — consider staggering breaks here and pre-prepping for the dinner rush. Weekend volume runs ~20-30% above weekday; schedule an extra server Friday-Sunday.`,
-      color: "text-charcoal",
-    });
-
-    result.push({
-      icon: <Megaphone size={18} />,
-      title: "Promotion Idea",
-      body: `${topItem} is already the top seller — don't discount it. Instead, promote underperforming high-margin items. Consider a "Chef's Pick" weekly feature spotlighting a Watch List item (low volume, decent margin) to move inventory and diversify orders across prep stations.`,
-      color: "text-chili",
-    });
-
-    result.push({
-      icon: <AlertCircle size={18} />,
-      title: "Data Caveat",
-      body: `This report is built on synthetic POS data. Recipe quantities and ingredient inventory targets are estimated assumptions for demonstration. Before acting on prep, purchasing, or staffing recommendations, validate against actual supplier lead times, real recipe cards, and historical POS data.`,
-      color: "text-charcoal-muted",
-    });
-
-    return result;
+    return {
+      topByQty, bottomByQty, topSauce,
+      busiestHour, slowestHour,
+      bevRate, dessRate,
+      shortShelf, weekendLift, weekdayAvg, weekendAvg,
+      topRevItems, lowVolHighPrice,
+    };
   }, []);
+
+  const insights = [
+    {
+      icon: <TrendingUp size={16} />,
+      color: "text-padma-green",
+      bg: "bg-padma-green-pale/30",
+      title: `${data.topByQty[0]?.[0]} — ${fmt(data.topByQty[0]?.[1].qty ?? 0)} sold`,
+      body: `Top seller by volume. ${fmtDollars(data.topByQty[0]?.[1].rev ?? 0)} revenue. Keep prep stocked.`,
+    },
+    {
+      icon: <ArrowUpRight size={16} />,
+      color: "text-gold",
+      bg: "bg-gold-pale/30",
+      title: `Dessert attach at ${fmtPct(data.dessRate)}`,
+      body: `Beverage attach is ${fmtPct(data.bevRate)}. A server prompt could lift desserts 5-10 points.`,
+    },
+    {
+      icon: <TrendingUp size={16} />,
+      color: "text-jade",
+      bg: "bg-jade-pale/30",
+      title: `Weekend lift: +${(data.weekendLift * 100).toFixed(0)}%`,
+      body: `${fmtDollars(data.weekendAvg)}/day weekends vs ${fmtDollars(data.weekdayAvg)} weekdays. Schedule extra cover Fri-Sun.`,
+    },
+    {
+      icon: <AlertTriangle size={16} />,
+      color: "text-chili",
+      bg: "bg-chili-pale/30",
+      title: `${data.topSauce?.[0] ?? "Top sauce"} — ${fmt(Math.round(data.topSauce?.[1] ?? 0))}g burned`,
+      body: `Highest-volume sauce. Batch-critical — double batch for weekends.`,
+    },
+    {
+      icon: <TrendingDown size={16} />,
+      color: "text-charcoal-muted",
+      bg: "bg-rice-dark",
+      title: `${data.slowestHour}:00 is dead — ${data.busiestHour}:00 peaks`,
+      body: `Stagger breaks at ${data.slowestHour}:00, pre-prep for the ${data.busiestHour}:00 rush.`,
+    },
+  ];
 
   return (
     <section>
-      <SectionHeader number={6} title="Owner Action Plan" question="What should we do next week?" />
+      <SectionHeader number={6} title="Key Takeaways" question="What should we act on?" />
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        {actions.map((a) => (
-          <div key={a.title} className="bg-white border border-rule rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {insights.map((a) => (
+          <div key={a.title} className={`${a.bg} border border-rule/50 rounded-xl p-4`}>
+            <div className="flex items-center gap-2 mb-1.5">
               <span className={a.color}>{a.icon}</span>
-              <h3 className="font-semibold text-sm text-charcoal">{a.title}</h3>
+              <h3 className="font-semibold text-[13px] text-charcoal">{a.title}</h3>
             </div>
-            <p className="text-[13px] text-charcoal-light leading-relaxed">{a.body}</p>
+            <p className="text-[12px] text-charcoal-light leading-relaxed">{a.body}</p>
           </div>
         ))}
       </div>
+
+      {/* Data tables: revenue leaders + promote opportunities */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="bg-white border border-rule rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-rule/50">
+            <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted">Top Revenue Drivers</p>
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {data.topRevItems.map(([name, v]) => (
+                <tr key={name} className="border-b border-rule/20 hover:bg-rice-dark/30">
+                  <td className="px-4 py-2 font-medium text-charcoal">{name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-charcoal-muted">{fmt(v.qty)} sold</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium text-gold">{fmtDollars(v.rev)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-white border border-rule rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-rule/50">
+            <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted">Low Volume, Worth Promoting</p>
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {data.lowVolHighPrice.map(([name, v]) => (
+                <tr key={name} className="border-b border-rule/20 hover:bg-rice-dark/30">
+                  <td className="px-4 py-2 font-medium text-charcoal">{name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-charcoal-muted">{fmt(v.qty)} sold</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium text-chili">{fmtDollars(v.rev / v.qty)}/ea</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-4 py-2 text-[10px] text-charcoal-muted italic">
+            Higher-priced items with low volume — "Chef's Pick" candidates
+          </p>
+        </div>
+      </div>
+
+      <p className="text-[10px] text-charcoal-muted italic mt-4 text-center">
+        Based on synthetic POS data — validate against actual records before acting
+      </p>
     </section>
   );
 }

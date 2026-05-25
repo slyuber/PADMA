@@ -9,9 +9,21 @@ import { OwnerActionPlan } from "./components/sections/OwnerActionPlan";
 import { DataNotesDrawer } from "./components/DataNotesDrawer";
 import { FilterBar } from "./components/FilterBar";
 import { FileText } from "lucide-react";
+import { cn } from "./lib/utils";
+
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "menu", label: "Menu" },
+  { id: "kitchen", label: "Kitchen" },
+  { id: "money", label: "Money" },
+  { id: "actions", label: "Actions" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
 
 export default function App() {
   const [notesOpen, setNotesOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
 
   return (
     <FilterProvider>
@@ -39,20 +51,45 @@ export default function App() {
           </div>
         </header>
 
-        <FilterBar />
+        {/* Tabs + Filters */}
+        <div className="sticky top-0 z-40 bg-rice/95 backdrop-blur-sm border-b border-rule">
+          <div className="mx-auto max-w-7xl px-4 sm:px-8">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              {/* Section tabs */}
+              <nav className="flex -mb-px">
+                {TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={cn(
+                      "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                      activeTab === t.id
+                        ? "border-padma-green text-padma-green"
+                        : "border-transparent text-charcoal-muted hover:text-charcoal hover:border-rule"
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
+              {/* Filters */}
+              <FilterBar />
+            </div>
+          </div>
+        </div>
 
-        <main className="mx-auto max-w-7xl px-4 sm:px-8">
-          <ExecutiveSummary />
-          <hr className="section-rule" />
-          <MenuMovers />
-          <hr className="section-rule" />
-          <KitchenPressure />
-          <hr className="section-rule" />
-          <IngredientBurn />
-          <hr className="section-rule" />
-          <MoneyIn />
-          <hr className="section-rule" />
-          <OwnerActionPlan />
+        <main className="mx-auto max-w-7xl px-4 sm:px-8 pt-6">
+          {activeTab === "overview" && <ExecutiveSummary />}
+          {activeTab === "menu" && <MenuMovers />}
+          {activeTab === "kitchen" && (
+            <>
+              <KitchenPressure />
+              <hr className="section-rule" />
+              <IngredientBurn />
+            </>
+          )}
+          {activeTab === "money" && <MoneyIn />}
+          {activeTab === "actions" && <OwnerActionPlan />}
 
           <footer className="text-center text-xs text-charcoal-muted py-8 mt-8 border-t border-rule">
             Built with synthetic POS data &middot; Recipe and inventory figures are demo estimates, not actuals
