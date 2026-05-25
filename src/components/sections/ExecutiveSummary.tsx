@@ -1,38 +1,32 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useFilters } from "@/lib/FilterContext";
-import { completedOrders, allOrderItems, getHour, CALGARY_HOLIDAYS_MAY_2026, menuMap } from "@/lib/data";
-import { recipes } from "@/lib/data";
-import { fmtDollars, fmt, CHART_COLORS } from "@/lib/utils";
-import { SectionHeader } from "../SectionHeader";
+import { completedOrders, allOrderItems, getHour, CALGARY_HOLIDAYS_MAY_2026, recipes } from "@/lib/data";
+import { fmtDollars, fmt, fmtK, CHART_COLORS } from "@/lib/utils";
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell,
 } from "recharts";
 import {
-  DollarSign, ShoppingBag, Receipt, TrendingUp, Clock, Utensils, Flame,
+  TrendingUp, Flame, Coffee, UtensilsCrossed, Clock, AlertTriangle,
 } from "lucide-react";
-
-interface KPI {
-  label: string;
-  value: string;
-  sub?: string;
-  icon: React.ReactNode;
-  color: string;
-}
 
 export function ExecutiveSummary() {
   const { orders, items } = useFilters();
 
   const stats = useMemo(() => {
     const revenue = orders.reduce((s, o) => s + o.total, 0);
+    const netSales = orders.reduce((s, o) => s + o.subtotal, 0);
     const avgTicket = orders.length ? revenue / orders.length : 0;
+    const tips = orders.reduce((s, o) => s + o.tip, 0);
 
-    const byDate: Record<string, { rev: number; count: number }> = {};
+    const byDate: Record<string, { rev: number; count: number; tips: number }> = {};
     for (const o of orders) {
       const d = o.order_date;
-      if (!byDate[d]) byDate[d] = { rev: 0, count: 0 };
+      if (!byDate[d]) byDate[d] = { rev: 0, count: 0, tips: 0 };
       byDate[d].rev += o.total;
       byDate[d].count += 1;
+      byDate[d].tips += o.tip;
     }
 
     const dates = Object.keys(byDate).sort();
@@ -41,25 +35,33 @@ export function ExecutiveSummary() {
       day: new Date(d + "T12:00:00").getDate(),
       revenue: Math.round(byDate[d].rev),
       orders: byDate[d].count,
+      tips: Math.round(byDate[d].tips),
       isHoliday: d in CALGARY_HOLIDAYS_MAY_2026,
       holidayName: CALGARY_HOLIDAYS_MAY_2026[d] || "",
       dow: new Date(d + "T12:00:00").toLocaleDateString("en-CA", { weekday: "short" }),
     }));
 
     const bestDay = dailyData.reduce((a, b) => (a.revenue > b.revenue ? a : b), dailyData[0]);
+    const worstDay = dailyData.reduce((a, b) => (a.revenue < b.revenue ? a : b), dailyData[0]);
 
+    // Hourly distribution
     const hourCounts: Record<number, number> = {};
     for (const o of orders) {
       const h = getHour(o);
       hourCounts[h] = (hourCounts[h] || 0) + 1;
     }
-    const hourEntries = Object.entries(hourCounts);
-    const busiestHour = hourEntries.length
-      ? hourEntries.reduce((a, b) => (Number(b[1]) > Number(a[1]) ? b : a))
-      : ["0", "0"];
+    const hourData = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      orders: hourCounts[h] || 0,
+      label: h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`,
+    })).filter((h) => h.orders > 0);
 
+    const busiestHour = hourData.reduce((a, b) => (b.orders > a.orders ? b : a), hourData[0]);
+
+    // Top item excluding Sides and Extras
     const itemCounts: Record<string, number> = {};
     for (const i of items) {
+      if (i.category === "Sides" || i.category === "Extras") continue;
       itemCounts[i.item_name] = (itemCounts[i.item_name] || 0) + i.quantity;
     }
     const topItem = Object.entries(itemCounts).reduce<[string, number]>(
@@ -67,6 +69,7 @@ export function ExecutiveSummary() {
       ["", 0]
     );
 
+    // Prep group load
     const prepGroupLoad: Record<string, number> = {};
     for (const i of items) {
       const recipeRows = recipes.filter((r) => r.menu_item_id === i.menu_item_id);
@@ -80,235 +83,340 @@ export function ExecutiveSummary() {
       ["", 0]
     );
 
-    const dineIn = orders.filter((o) => o.order_type === "dine_in").length;
-    const takeout = orders.filter((o) => o.order_type === "takeout").length;
-    const delivery = orders.filter((o) => o.order_type === "delivery").length;
-    const avgTipDineIn =
-      dineIn > 0
-        ? orders
-            .filter((o) => o.order_type === "dine_in" && o.tip > 0)
-            .reduce((s, o) => s + o.tip, 0) /
-          orders.filter((o) => o.order_type === "dine_in").length
-        : 0;
+    // Channel split
+    const dineIn = orders.filter((o) => o.order_type === "dine_in");
+    const takeout = orders.filter((o) => o.order_type === "takeout");
+    const delivery = orders.filter((o) => o.order_type === "delivery");
+    const dineInRev = dineIn.reduce((s, o) => s + o.total, 0);
+    const takeoutRev = takeout.reduce((s, o) => s + o.total, 0);
+    const deliveryRev = delivery.reduce((s, o) => s + o.total, 0);
 
-    const weekdayRev = dailyData
-      .filter((d) => !["Sat", "Sun"].includes(d.dow))
-      .reduce((s, d) => s + d.revenue, 0);
-    const weekendRev = dailyData
-      .filter((d) => ["Sat", "Sun"].includes(d.dow))
-      .reduce((s, d) => s + d.revenue, 0);
-    const weekdayDays = dailyData.filter((d) => !["Sat", "Sun"].includes(d.dow)).length;
-    const weekendDays = dailyData.filter((d) => ["Sat", "Sun"].includes(d.dow)).length;
+    // Weekend vs weekday
+    const weekdayRevs = dailyData.filter((d) => !["Sat", "Sun"].includes(d.dow));
+    const weekendRevs = dailyData.filter((d) => ["Sat", "Sun"].includes(d.dow));
+    const weekdayAvg = weekdayRevs.length ? weekdayRevs.reduce((s, d) => s + d.revenue, 0) / weekdayRevs.length : 0;
+    const weekendAvg = weekendRevs.length ? weekendRevs.reduce((s, d) => s + d.revenue, 0) / weekendRevs.length : 0;
+
+    // Beverage attachment
+    const foodOrders = new Set(
+      items.filter((i) => !["Coffee", "Tea", "Drinks", "Desserts", "Extras", "Sides"].includes(i.category)).map((i) => i.order_id)
+    );
+    const bevOrders = new Set(
+      items.filter((i) => ["Coffee", "Tea", "Drinks"].includes(i.category)).map((i) => i.order_id)
+    );
+    const bevRate = foodOrders.size ? [...bevOrders].filter((id) => foodOrders.has(id)).length / foodOrders.size : 0;
+
+    // Mini waterfall
+    const grossSales = orders.reduce((s, o) => s + o.subtotal, 0);
+    const discounts = orders.reduce((s, o) => s + o.discount_amount, 0);
+    const gst = orders.reduce((s, o) => s + o.gst, 0);
 
     return {
-      revenue,
+      revenue, netSales, avgTicket, tips, grossSales, discounts, gst,
       orderCount: orders.length,
-      avgTicket,
-      bestDay,
-      busiestHour: Number(busiestHour[0]),
-      topItem,
-      topPrepGroup,
-      dailyData,
-      dineIn,
-      takeout,
-      delivery,
-      avgTipDineIn,
-      weekdayAvg: weekdayDays ? weekdayRev / weekdayDays : 0,
-      weekendAvg: weekendDays ? weekendRev / weekendDays : 0,
+      bestDay, worstDay, dailyData, hourData, busiestHour,
+      topItem, topPrepGroup,
+      dineInCount: dineIn.length, takeoutCount: takeout.length, deliveryCount: delivery.length,
+      dineInRev, takeoutRev, deliveryRev,
+      weekdayAvg, weekendAvg, bevRate,
     };
   }, [orders, items]);
 
-  const kpis: KPI[] = [
-    {
-      label: "Revenue",
-      value: fmtDollars(stats.revenue),
-      sub: `${fmt(stats.orderCount)} completed orders`,
-      icon: <DollarSign size={18} />,
-      color: "text-gold",
-    },
-    {
-      label: "Avg Ticket",
-      value: fmtDollars(stats.avgTicket),
-      sub: `incl. 5% GST + tips`,
-      icon: <Receipt size={18} />,
-      color: "text-padma-green",
-    },
-    {
-      label: "Best Day",
-      value: stats.bestDay
-        ? `${stats.bestDay.dow} May ${stats.bestDay.day}`
-        : "—",
-      sub: stats.bestDay ? fmtDollars(stats.bestDay.revenue) : "",
-      icon: <TrendingUp size={18} />,
-      color: "text-gold",
-    },
-    {
-      label: "Busiest Hour",
-      value: `${stats.busiestHour}:00`,
-      sub: `${fmt(stats.dineIn)} dine-in · ${fmt(stats.takeout)} takeout · ${fmt(stats.delivery)} delivery`,
-      icon: <Clock size={18} />,
-      color: "text-jade",
-    },
-    {
-      label: "Top Item",
-      value: stats.topItem[0],
-      sub: `${fmt(stats.topItem[1] as number)} sold`,
-      icon: <Utensils size={18} />,
-      color: "text-chili",
-    },
-    {
-      label: "Highest Pressure",
-      value: stats.topPrepGroup[0],
-      sub: "by weighted complexity load",
-      icon: <Flame size={18} />,
-      color: "text-chili",
-    },
-  ];
-
-  const insights = useMemo(() => {
-    const lines: string[] = [];
-    lines.push(
-      `The restaurant did ${fmtDollars(stats.revenue)} across ${fmt(stats.orderCount)} orders in May — averaging ${fmtDollars(stats.avgTicket)} per ticket.`
-    );
-    lines.push(
-      `Weekends averaged ${fmtDollars(stats.weekendAvg)}/day vs ${fmtDollars(stats.weekdayAvg)}/day on weekdays — a ${((stats.weekendAvg / stats.weekdayAvg - 1) * 100).toFixed(0)}% weekend lift.`
-    );
-    lines.push(
-      `${stats.topItem[0]} was the top seller with ${fmt(stats.topItem[1] as number)} units. ${stats.topPrepGroup[0]} carried the heaviest kitchen load.`
-    );
-    lines.push(
-      `Dine-in averaged ${fmtDollars(stats.avgTipDineIn)} tip per order. Delivery (${fmt(stats.delivery)} orders) generated no POS-tracked tips.`
-    );
-    if (stats.dailyData.some((d) => d.isHoliday)) {
-      const hol = stats.dailyData.find((d) => d.isHoliday)!;
-      lines.push(
-        `Victoria Day (May ${hol.day}) brought ${fmtDollars(hol.revenue)} — check if that beat or trailed a typical ${hol.dow}.`
-      );
-    }
-    return lines;
-  }, [stats]);
-
   return (
-    <section className="pt-8">
-      <SectionHeader number={1} title="Executive Summary" question="How did the month perform?" />
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-        {kpis.map((k, i) => (
-          <motion.div
-            key={k.label}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.06, duration: 0.35 }}
-            className="bg-white rounded-lg border border-rule p-3"
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className={k.color}>{k.icon}</span>
-              <span className="text-[11px] font-medium text-charcoal-muted uppercase tracking-wide">
-                {k.label}
-              </span>
-            </div>
-            <p className="text-base font-semibold text-charcoal leading-tight truncate">
-              {k.value}
+    <section className="pt-10">
+      {/* Hero: Month Pulse + Calendar + Highlights */}
+      <div className="grid lg:grid-cols-12 gap-6 mb-8">
+        {/* LEFT: Month Pulse */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="lg:col-span-3 space-y-4"
+        >
+          <div className="bg-white border border-rule rounded-xl p-5 shadow-sm">
+            <p className="text-[11px] font-semibold tracking-widest uppercase text-charcoal-muted mb-1">
+              May 2026 Revenue
             </p>
-            {k.sub && (
-              <p className="text-[11px] text-charcoal-muted mt-0.5 truncate">{k.sub}</p>
-            )}
-          </motion.div>
-        ))}
+            <p className="font-serif text-4xl text-charcoal tracking-tight leading-none mb-2">
+              {fmtK(stats.revenue)}
+            </p>
+            <div className="flex items-baseline gap-3 text-[12px] mb-4">
+              <span className="text-charcoal-muted">{fmt(stats.orderCount)} orders</span>
+              <span className="text-charcoal-muted">&middot;</span>
+              <span className="text-charcoal-muted">{fmtDollars(stats.avgTicket)} avg</span>
+            </div>
+            <ResponsiveContainer width="100%" height={60}>
+              <AreaChart data={stats.dailyData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="pulseGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={CHART_COLORS.green} stopOpacity={0.25} />
+                    <stop offset="95%" stopColor={CHART_COLORS.green} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <Area type="monotone" dataKey="revenue" stroke={CHART_COLORS.green} strokeWidth={1.5} fill="url(#pulseGrad)" />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-rule/50">
+              <div>
+                <p className="text-[10px] text-charcoal-muted uppercase tracking-wide">Best Day</p>
+                <p className="text-sm font-semibold text-charcoal">{stats.bestDay?.dow} {stats.bestDay?.day}</p>
+                <p className="text-[11px] text-padma-green font-medium">{fmtDollars(stats.bestDay?.revenue ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-charcoal-muted uppercase tracking-wide">Slowest</p>
+                <p className="text-sm font-semibold text-charcoal">{stats.worstDay?.dow} {stats.worstDay?.day}</p>
+                <p className="text-[11px] text-chili font-medium">{fmtDollars(stats.worstDay?.revenue ?? 0)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Channel split mini */}
+          <div className="bg-white border border-rule rounded-xl p-4 shadow-sm">
+            <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted mb-3">
+              Revenue by Channel
+            </p>
+            <ChannelBar
+              data={[
+                { label: "Dine-In", value: stats.dineInRev, color: CHART_COLORS.green },
+                { label: "Takeout", value: stats.takeoutRev, color: CHART_COLORS.gold },
+                { label: "Delivery", value: stats.deliveryRev, color: CHART_COLORS.jade },
+              ]}
+              total={stats.revenue}
+            />
+          </div>
+        </motion.div>
+
+        {/* CENTER: Calendar Heatmap */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="lg:col-span-5"
+        >
+          <div className="bg-white border border-rule rounded-xl p-5 shadow-sm h-full">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[11px] font-semibold tracking-widest uppercase text-charcoal-muted">
+                Daily Revenue — May 2026
+              </p>
+              <p className="text-[10px] text-charcoal-muted">Click a day to filter</p>
+            </div>
+            <CalendarHeatmap data={stats.dailyData} />
+          </div>
+        </motion.div>
+
+        {/* RIGHT: Owner Highlights */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="lg:col-span-4 space-y-2.5"
+        >
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted mb-1 px-1">
+            Owner Highlights
+          </p>
+          <InsightCard
+            icon={<TrendingUp size={15} />}
+            color="text-padma-green"
+            title="Dinner carries the month"
+            body={`Peak hour ${stats.busiestHour?.label} drives ${fmt(stats.busiestHour?.orders ?? 0)} orders. Weekends avg ${fmtDollars(stats.weekendAvg)}/day vs ${fmtDollars(stats.weekdayAvg)} weekdays.`}
+          />
+          <InsightCard
+            icon={<UtensilsCrossed size={15} />}
+            color="text-gold"
+            title={`${stats.topItem[0]} leads`}
+            body={`${fmt(stats.topItem[1])} sold this month — your highest-volume main. Watch prep capacity.`}
+          />
+          <InsightCard
+            icon={<Flame size={15} />}
+            color="text-chili"
+            title={`${stats.topPrepGroup[0]} under pressure`}
+            body={`Highest weighted complexity load in the kitchen. Staff here during dinner rush.`}
+          />
+          <InsightCard
+            icon={<Coffee size={15} />}
+            color="text-jade"
+            title={`Beverage attach: ${(stats.bevRate * 100).toFixed(0)}%`}
+            body={`Room to grow. A server prompt or combo deal could lift this 5-10 points.`}
+          />
+          <InsightCard
+            icon={<AlertTriangle size={15} />}
+            color="text-charcoal-muted"
+            title="Synthetic data caveat"
+            body="Demo assumptions — validate against actual POS before acting."
+          />
+        </motion.div>
       </div>
 
-      {/* Owner insights */}
-      <div className="bg-padma-green-pale/40 border border-padma-green/20 rounded-lg p-4 mb-8">
-        <p className="text-xs font-semibold text-padma-green uppercase tracking-wide mb-2">
-          Month at a Glance
-        </p>
-        <ul className="space-y-1.5">
-          {insights.map((line, i) => (
-            <li key={i} className="text-sm text-charcoal-light leading-snug flex gap-2">
-              <span className="text-padma-green mt-0.5 shrink-0">&#8226;</span>
-              {line}
-            </li>
-          ))}
-        </ul>
-      </div>
+      {/* Bottom tiles: Daypart Pulse + Money Flow + Weekend Effect */}
+      <div className="grid sm:grid-cols-3 gap-4">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+          className="bg-white border border-rule rounded-xl p-4 shadow-sm"
+        >
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted mb-3">
+            Daypart Pulse
+          </p>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={stats.hourData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 9, fill: "#78716c" }}
+                interval="preserveStartEnd"
+              />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{ background: "#faf6f0", border: "1px solid #c8d6c0", borderRadius: 6, fontSize: 11 }}
+                formatter={(v: number) => [`${v} orders`, ""]}
+                labelFormatter={(l) => `${l}`}
+              />
+              <Bar dataKey="orders" radius={[2, 2, 0, 0]} animationDuration={800}>
+                {stats.hourData.map((h) => (
+                  <Cell
+                    key={h.hour}
+                    fill={h.hour === stats.busiestHour?.hour ? CHART_COLORS.green : CHART_COLORS.greenPale}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-[11px] text-charcoal-muted mt-2">
+            <span className="font-medium text-padma-green">{stats.busiestHour?.label}</span> is peak — staff accordingly
+          </p>
+        </motion.div>
 
-      {/* Calendar heatmap */}
-      <div className="mb-6">
-        <p className="text-xs font-semibold text-charcoal-muted uppercase tracking-wide mb-3">
-          Daily Revenue — May 2026
-        </p>
-        <CalendarHeatmap data={stats.dailyData} />
-      </div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.4 }}
+          className="bg-white border border-rule rounded-xl p-4 shadow-sm"
+        >
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted mb-3">
+            Money Flow
+          </p>
+          <MiniWaterfall
+            gross={stats.grossSales}
+            discounts={stats.discounts}
+            gst={stats.gst}
+            tips={stats.tips}
+          />
+          <p className="text-[11px] text-charcoal-muted mt-2">
+            Not every dollar through the till is revenue
+          </p>
+        </motion.div>
 
-      {/* Month story line */}
-      <div className="bg-white border border-rule rounded-lg p-4">
-        <p className="text-xs font-semibold text-charcoal-muted uppercase tracking-wide mb-3">
-          Revenue Trend
-        </p>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={stats.dailyData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-            <defs>
-              <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHART_COLORS.green} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={CHART_COLORS.green} stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <XAxis
-              dataKey="day"
-              tickLine={false}
-              axisLine={false}
-              tick={{ fontSize: 11, fill: "#78716c" }}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.5 }}
+          className="bg-white border border-rule rounded-xl p-4 shadow-sm"
+        >
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-charcoal-muted mb-3">
+            Weekend Effect
+          </p>
+          <div className="flex items-end gap-4 mb-3">
+            <div>
+              <p className="text-[10px] text-charcoal-muted">Weekday avg</p>
+              <p className="text-lg font-semibold text-charcoal tabular-nums">{fmtDollars(stats.weekdayAvg)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] text-charcoal-muted">Weekend avg</p>
+              <p className="text-lg font-semibold text-padma-green tabular-nums">{fmtDollars(stats.weekendAvg)}</p>
+            </div>
+          </div>
+          <div className="h-2 rounded-full bg-rice-dark overflow-hidden">
+            <div
+              className="h-full rounded-full bg-padma-green transition-all"
+              style={{ width: `${Math.min((stats.weekendAvg / (stats.weekdayAvg + stats.weekendAvg)) * 100, 100)}%`, marginLeft: `${(stats.weekdayAvg / (stats.weekdayAvg + stats.weekendAvg)) * 100}%` }}
             />
-            <YAxis hide />
-            <Tooltip
-              contentStyle={{
-                background: "#faf6f0",
-                border: "1px solid #c8d6c0",
-                borderRadius: 6,
-                fontSize: 12,
-              }}
-              formatter={(v: number) => [fmtDollars(v), "Revenue"]}
-              labelFormatter={(d) => `May ${d}`}
-            />
-            {stats.dailyData
-              .filter((d) => d.isHoliday)
-              .map((d) => (
-                <ReferenceLine
-                  key={d.date}
-                  x={d.day}
-                  stroke={CHART_COLORS.chili}
-                  strokeDasharray="4 4"
-                  label={{
-                    value: d.holidayName,
-                    position: "top",
-                    fontSize: 10,
-                    fill: CHART_COLORS.chili,
-                  }}
-                />
-              ))}
-            <Area
-              type="monotone"
-              dataKey="revenue"
-              stroke={CHART_COLORS.green}
-              strokeWidth={2}
-              fill="url(#revGrad)"
-              animationDuration={1200}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+          </div>
+          <p className="text-[11px] text-charcoal-muted mt-2">
+            <span className="font-medium text-padma-green">
+              +{((stats.weekendAvg / stats.weekdayAvg - 1) * 100).toFixed(0)}%
+            </span> weekend lift — schedule extra cover Fri-Sun
+          </p>
+        </motion.div>
       </div>
     </section>
   );
 }
 
-/* ── Calendar Heatmap ────────────────────────────────── */
+/* ── Insight Card ────────────────────────────────── */
+function InsightCard({ icon, color, title, body }: { icon: React.ReactNode; color: string; title: string; body: string }) {
+  return (
+    <div className="bg-white border border-rule/70 rounded-lg px-4 py-3 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className={color}>{icon}</span>
+        <p className="text-[13px] font-semibold text-charcoal leading-tight">{title}</p>
+      </div>
+      <p className="text-[11px] text-charcoal-muted leading-relaxed pl-[23px]">{body}</p>
+    </div>
+  );
+}
+
+/* ── Channel Bar ────────────────────────────────── */
+function ChannelBar({ data, total }: { data: { label: string; value: number; color: string }[]; total: number }) {
+  return (
+    <div className="space-y-2">
+      {data.map((d) => {
+        const pct = total > 0 ? (d.value / total) * 100 : 0;
+        return (
+          <div key={d.label} className="flex items-center gap-2">
+            <span className="text-[11px] text-charcoal-muted w-14 shrink-0">{d.label}</span>
+            <div className="flex-1 h-3 bg-rice-dark rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: d.color }} />
+            </div>
+            <span className="text-[11px] font-medium tabular-nums text-charcoal w-11 text-right">{pct.toFixed(0)}%</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Mini Waterfall ────────────────────────────────── */
+function MiniWaterfall({ gross, discounts, gst, tips }: { gross: number; discounts: number; gst: number; tips: number }) {
+  const net = gross - discounts;
+  const rows = [
+    { label: "Gross Sales", value: gross, color: CHART_COLORS.green },
+    { label: "Discounts", value: -discounts, color: CHART_COLORS.chili },
+    { label: "Net Sales", value: net, color: CHART_COLORS.greenLight },
+    { label: "GST", value: gst, color: CHART_COLORS.jade },
+    { label: "Tips", value: tips, color: CHART_COLORS.gold },
+  ];
+  const maxVal = Math.max(...rows.map((r) => Math.abs(r.value)));
+
+  return (
+    <div className="space-y-1.5">
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center gap-2">
+          <span className="text-[10px] text-charcoal-muted w-16 shrink-0">{r.label}</span>
+          <div className="flex-1 h-2.5 bg-rice-dark rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${(Math.abs(r.value) / maxVal) * 100}%`, backgroundColor: r.color }}
+            />
+          </div>
+          <span className="text-[10px] font-medium tabular-nums text-charcoal w-14 text-right">
+            {r.value < 0 ? `(${fmtK(Math.abs(r.value))})` : fmtK(r.value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Calendar Heatmap v2 ────────────────────────────────── */
 function CalendarHeatmap({
   data,
 }: {
-  data: { date: string; day: number; revenue: number; dow: string; isHoliday: boolean }[];
+  data: { date: string; day: number; revenue: number; orders: number; tips: number; dow: string; isHoliday: boolean; holidayName: string }[];
 }) {
   const { setSelectedDate } = useFilters();
+  const [hovered, setHovered] = useState<typeof data[number] | null>(null);
   const maxRev = Math.max(...data.map((d) => d.revenue));
 
   const firstDow = new Date(data[0]?.date + "T12:00:00").getDay();
@@ -327,61 +435,87 @@ function CalendarHeatmap({
     weeks.push(week);
   }
 
-  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayLabels = ["S", "M", "T", "W", "T", "F", "S"];
+
+  const getIntensityClass = (rev: number) => {
+    const intensity = rev / maxRev;
+    if (intensity > 0.85) return "bg-padma-green text-white";
+    if (intensity > 0.7) return "bg-padma-green-light text-white";
+    if (intensity > 0.5) return "bg-padma-green-pale/80 text-charcoal";
+    if (intensity > 0.3) return "bg-rice-darker text-charcoal-light";
+    return "bg-rice-dark text-charcoal-muted";
+  };
 
   return (
-    <div className="overflow-x-auto">
-      <div className="inline-grid gap-1" style={{ gridTemplateColumns: `auto repeat(${weeks.length}, 1fr)` }}>
-        {dayLabels.map((l) => (
-          <div key={l} className="text-[10px] text-charcoal-muted pr-1.5 flex items-center justify-end h-8">
-            {l}
-          </div>
-        ))}
-        {weeks.map((wk, wi) =>
-          wk.map((d, di) => {
-            if (!d) {
-              return <div key={`${wi}-${di}`} className="w-8 h-8" />;
-            }
-            const intensity = d.revenue / maxRev;
-            const bg =
-              intensity > 0.8
-                ? "bg-padma-green"
-                : intensity > 0.6
-                ? "bg-padma-green-light"
-                : intensity > 0.4
-                ? "bg-padma-green-pale"
-                : intensity > 0.2
-                ? "bg-rice-darker"
-                : "bg-rice-dark";
-            const textColor = intensity > 0.6 ? "text-white" : "text-charcoal-light";
-            return (
-              <button
-                key={d.date}
-                onClick={() => setSelectedDate(d.date)}
-                title={`May ${d.day}: ${fmtDollars(d.revenue)}`}
-                className={`w-8 h-8 rounded text-[10px] font-medium ${bg} ${textColor} hover:ring-2 hover:ring-padma-green transition-all ${
-                  d.isHoliday ? "ring-1 ring-chili" : ""
-                }`}
-              >
-                {d.day}
-              </button>
-            );
-          })
-        )}
+    <div className="relative">
+      <div className="flex gap-1">
+        {/* Day labels */}
+        <div className="flex flex-col gap-1 pt-0">
+          {dayLabels.map((l, i) => (
+            <div key={i} className="w-5 h-9 flex items-center justify-center text-[10px] text-charcoal-muted">
+              {l}
+            </div>
+          ))}
+        </div>
+        {/* Grid */}
+        <div className="flex gap-1 flex-1">
+          {weeks.map((wk, wi) => (
+            <div key={wi} className="flex flex-col gap-1 flex-1">
+              {wk.map((d, di) => {
+                if (!d) return <div key={`${wi}-${di}`} className="h-9 rounded-md" />;
+                return (
+                  <button
+                    key={d.date}
+                    onClick={() => setSelectedDate(d.date)}
+                    onMouseEnter={() => setHovered(d)}
+                    onMouseLeave={() => setHovered(null)}
+                    className={`h-9 rounded-md text-[11px] font-medium transition-all hover:scale-105 hover:shadow-md ${getIntensityClass(d.revenue)} ${d.isHoliday ? "ring-2 ring-chili/60" : ""}`}
+                  >
+                    {d.day}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="flex items-center gap-2 mt-2 text-[10px] text-charcoal-muted">
+
+      {/* Legend */}
+      <div className="flex items-center gap-2 mt-3 text-[10px] text-charcoal-muted">
         <span>Low</span>
-        {["bg-rice-dark", "bg-rice-darker", "bg-padma-green-pale", "bg-padma-green-light", "bg-padma-green"].map(
-          (c) => (
-            <div key={c} className={`w-4 h-4 rounded ${c}`} />
-          )
-        )}
+        {["bg-rice-dark", "bg-rice-darker", "bg-padma-green-pale/80", "bg-padma-green-light", "bg-padma-green"].map((c) => (
+          <div key={c} className={`w-5 h-3.5 rounded-sm ${c}`} />
+        ))}
         <span>High</span>
-        <span className="ml-3">
-          <span className="inline-block w-3 h-3 rounded ring-1 ring-chili mr-1" />
+        <span className="ml-3 flex items-center gap-1">
+          <span className="inline-block w-3.5 h-3.5 rounded-sm ring-2 ring-chili/60" />
           Holiday
         </span>
       </div>
+
+      {/* Rich hover tooltip */}
+      {hovered && (
+        <div className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-charcoal text-white rounded-lg px-4 py-3 shadow-lg text-[11px] whitespace-nowrap pointer-events-none">
+          <p className="font-semibold text-[13px] mb-1">
+            {hovered.dow}, May {hovered.day}
+            {hovered.isHoliday && <span className="ml-2 text-chili-light">({hovered.holidayName})</span>}
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <p className="text-white/60">Revenue</p>
+              <p className="font-medium text-padma-green-pale">{fmtDollars(hovered.revenue)}</p>
+            </div>
+            <div>
+              <p className="text-white/60">Orders</p>
+              <p className="font-medium">{hovered.orders}</p>
+            </div>
+            <div>
+              <p className="text-white/60">Tips</p>
+              <p className="font-medium text-gold-light">{fmtDollars(hovered.tips)}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

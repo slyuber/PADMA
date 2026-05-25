@@ -16,16 +16,16 @@ export default function App() {
   return (
     <FilterProvider>
       <div className="min-h-screen pb-16">
-        <header className="border-b border-rule px-4 py-6 sm:px-8">
+        <header className="border-b border-rule/60 px-4 py-8 sm:px-8">
           <div className="mx-auto max-w-7xl flex items-end justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-xs font-medium tracking-widest uppercase text-padma-green mb-1">
+              <p className="text-[11px] font-semibold tracking-[0.2em] uppercase text-padma-green mb-2">
                 Monthly Owner Report
               </p>
-              <h1 className="font-serif text-3xl sm:text-4xl text-charcoal">
+              <h1 className="font-serif text-4xl sm:text-5xl text-charcoal leading-tight">
                 Padmanadi Calgary
               </h1>
-              <p className="text-charcoal-muted text-sm mt-1">
+              <p className="text-charcoal-muted text-sm mt-1.5">
                 May 2026 &middot; Synthetic POS data for demo purposes
               </p>
             </div>

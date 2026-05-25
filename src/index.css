@@ -38,7 +38,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.03;
+  opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 256px 256px;
   z-index: 9999;
@@ -47,8 +47,8 @@ body::before {
 .section-rule {
   border: none;
   height: 1px;
-  background: var(--color-rule);
-  margin: 2.5rem 0;
+  background: linear-gradient(to right, transparent, var(--color-rule), transparent);
+  margin: 3rem 0;
 }
 
 /* recharts overrides */
@@ -65,3 +65,8 @@ body::before {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-rice-darker); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-charcoal-muted); }
+
+/* Premium shadow for cards */
+.shadow-sm {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+}
